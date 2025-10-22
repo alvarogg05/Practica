@@ -86,6 +86,9 @@ class CryptoUtils:
         Returns:
             Tupla (ciphertext_base64, key_file_path)
         """
+        # Asegurar que existe el directorio
+        DATA_DIR.mkdir(exist_ok=True)
+        
         # Generar clave AES de 256 bits (32 bytes) e IV de 128 bits (16 bytes)
         key = os.urandom(32)
         iv = os.urandom(16)
@@ -153,6 +156,9 @@ class CryptoUtils:
         Returns:
             Tupla (hmac_hex, key_file_path)
         """
+        # Asegurar que existe el directorio
+        DATA_DIR.mkdir(exist_ok=True)
+        
         # Generar clave HMAC de 256 bits
         hmac_key = os.urandom(32)
         

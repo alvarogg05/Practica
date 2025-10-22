@@ -60,6 +60,10 @@ class CertificateAuthority:
         Genera el par de claves RSA y el certificado X.509 de la CA.
         Si es raíz se autofirma, si no, la firma el parent_ca.
         """
+        # Asegurar que existen los directorios
+        KEYS_DIR.mkdir(exist_ok=True)
+        CERTS_DIR.mkdir(exist_ok=True)
+        
         # Generar par de claves RSA de 2048 bits
         private_key = rsa.generate_private_key(
             public_exponent=65537,

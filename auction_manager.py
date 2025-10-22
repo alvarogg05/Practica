@@ -60,6 +60,9 @@ class AuctionManager:
         
         username = self.auth.get_current_user()
         
+        # Asegurar que existe el directorio de datos
+        DATA_DIR.mkdir(exist_ok=True)
+        
         # Cifrar descripción si se solicita
         if encrypt:
             description_enc, key_file = CryptoUtils.encrypt_aes_cbc(description)
@@ -138,6 +141,9 @@ class AuctionManager:
         if not winner:
             logger.info(f"✓ Subasta #{auction_id} cerrada sin pujas")
             return True
+        
+        # Asegurar que existe el directorio de datos
+        DATA_DIR.mkdir(exist_ok=True)
         
         # Generar documento de cierre (JSON con info del resultado)
         close_doc = {

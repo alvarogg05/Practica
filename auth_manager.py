@@ -66,6 +66,9 @@ class AuthManager:
             logger.error(f"El usuario '{username}' ya existe")
             return False
         
+        # Asegurar que existe el directorio de claves
+        KEYS_DIR.mkdir(exist_ok=True)
+        
         # Generar salt aleatorio (16 bytes = 32 caracteres hex)
         salt = secrets.token_hex(16)
         
