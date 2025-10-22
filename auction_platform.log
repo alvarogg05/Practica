@@ -1,0 +1,12 @@
+[INFO] 2025-10-22 17:25:33,097 - === Iniciando Plataforma de Subastas ===
+[INFO] 2025-10-22 17:25:33,123 - === Inicializando PKI ===
+[INFO] 2025-10-22 17:28:34,025 - === Iniciando Plataforma de Subastas ===
+[INFO] 2025-10-22 17:28:34,028 - === Inicializando PKI ===
+[INFO] 2025-10-22 17:28:34,028 - [OK] PKI inicializada (Root CA + Sub-CA)
+[ERROR] 2025-10-22 17:29:36,206 - Usuario 'Hola' no encontrado
+[INFO] 2025-10-22 17:30:52,575 - [OK] Certificado emitido para 'Hola' por 'Sub-CA-Madrid'
+[INFO] 2025-10-22 17:30:52,581 - [OK] Usuario 'Hola' registrado | PBKDF2-HMAC-SHA256 (100k iters) | RSA-2048 | Cert emitido
+[ERROR] 2025-10-22 17:31:13,554 - Credenciales incorrectas
+[INFO] 2025-10-22 17:31:36,113 - [OK] Usuario 'Hola' autenticado
+[INFO] 2025-10-22 17:31:58,460 - [OK] Descripción cifrada | AES-256-CBC (IV 128b)
+[INFO] 2025-10-22 17:31:58,466 - [OK] Subasta #1 creada por 'Hola'
