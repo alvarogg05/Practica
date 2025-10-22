@@ -1,4 +1,8 @@
-"""Funciones criptográficas auxiliares utilizadas en la plataforma."""
+"""Funciones criptográficas auxiliares utilizadas en la plataforma.
+
+Se concentran aquí utilidades de hashing de contraseñas, cifrado simétrico
+y generación de HMAC para mantener el resto del código más limpio.
+"""
 
 import base64
 import datetime
@@ -42,10 +46,12 @@ def encrypt_description(description: str) -> Tuple[str, Path]:
     data = description.encode()
     pad_len = 16 - (len(data) % 16)
     data += bytes([pad_len]) * pad_len
+    # Arriba aplicamos un padding PKCS#7 manual para que CBC acepte múltiplos de bloque
 
     encrypted_desc = encryptor.update(data) + encryptor.finalize()
     description_enc = base64.b64encode(encrypted_desc).decode()
 
+    # Guardamos key+iv juntos para poder recuperar después (sólo para la práctica)
     key_file = DATA_DIR / f"auction_key_{datetime.datetime.now().timestamp()}.bin"
     with open(key_file, "wb") as file:
         file.write(key + iv)

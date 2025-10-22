@@ -1,4 +1,9 @@
-"""Gestión de la infraestructura de clave pública (PKI)."""
+"""Gestión de la infraestructura de clave pública (PKI).
+
+Define una CA raíz y una sub-CA para emitir certificados X.509 a usuarios.
+El objetivo es poder verificar firmas realizadas con la clave privada del
+usuario usando su certificado.
+"""
 
 import datetime
 from typing import Optional
@@ -16,6 +21,11 @@ class CertificateAuthority:
     """Autoridad de Certificación para la emisión de certificados X.509."""
 
     def __init__(self, ca_name: str, is_root: bool = True, parent_ca: Optional['CertificateAuthority'] = None):
+        """Crea/recupera la CA indicada.
+
+        Si no existe clave/cert en disco, los genera. Si es una Sub-CA, requiere
+        parent_ca para firmar su certificado.
+        """
         self.ca_name = ca_name
         self.is_root = is_root
         self.parent_ca = parent_ca
@@ -25,6 +35,7 @@ class CertificateAuthority:
             self._generate_ca_certificate()
 
     def _generate_ca_certificate(self) -> None:
+        """Genera clave privada y certificado (self-signed si es CA raíz)."""
         private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
         with open(self.key_path, "wb") as file:
             file.write(private_key.private_bytes(
@@ -64,6 +75,7 @@ class CertificateAuthority:
                         encipher_only=False, decipher_only=False
                     ), critical=True))
 
+        # Firmamos el certificado de la CA (self-signed o firmado por la padre)
         certificate = builder.sign(signing_key, hashes.SHA256())
         with open(self.cert_path, "wb") as file:
             file.write(certificate.public_bytes(serialization.Encoding.PEM))
@@ -73,6 +85,7 @@ class CertificateAuthority:
         )
 
     def issue_certificate(self, username: str, public_key_path: str) -> str:
+        """Emite un certificado de usuario con la Sub-CA o CA actual."""
         with open(public_key_path, "rb") as file:
             user_public_key = serialization.load_pem_public_key(file.read())
         ca_private_key = self._load_private_key(self.key_path)
@@ -100,6 +113,7 @@ class CertificateAuthority:
                         key_cert_sign=False, crl_sign=False, encipher_only=False, decipher_only=False
                     ), critical=True))
 
+        # Firmamos el certificado del usuario con la clave privada de la CA
         certificate = builder.sign(ca_private_key, hashes.SHA256())
         cert_path = CERTS_DIR / f"{username}_cert.pem"
         with open(cert_path, "wb") as file:
@@ -110,10 +124,12 @@ class CertificateAuthority:
 
     @staticmethod
     def _load_private_key(path):
+        """Carga una clave privada PEM sin passphrase (uso interno)."""
         with open(path, "rb") as file:
             return load_pem_private_key(file.read(), password=None)
 
     @staticmethod
     def _load_certificate(path):
+        """Carga un certificado X.509 PEM desde disco (uso interno)."""
         with open(path, "rb") as file:
             return x509.load_pem_x509_certificate(file.read())

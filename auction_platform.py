@@ -1,4 +1,11 @@
-"""Lógica principal de la plataforma de subastas electrónicas."""
+"""Lógica principal de la plataforma de subastas electrónicas.
+
+Este módulo concentra la capa de aplicación: alta/login de usuarios, creación de
+subastas, pujas y cierre. Se apoya en:
+- config para constantes y logging.
+- crypto_utils para operaciones criptográficas de uso común.
+- pki para la emisión/validación de certificados X.509.
+"""
 
 import base64
 import datetime
@@ -22,9 +29,14 @@ from pki import CertificateAuthority
 
 
 class AuctionPlatform:
-    """Plataforma principal de subastas electrónicas."""
+    """Plataforma principal de subastas electrónicas.
+
+    Encapsula el estado (usuario autenticado, conexión SQLite y PKI) y ofrece
+    métodos de alto nivel para operar con la plataforma.
+    """
 
     def __init__(self):
+        """Inicializa recursos base: BD y jerarquía de certificación (PKI)."""
         self.db_conn = None
         self.current_user: Optional[str] = None
         self.root_ca: Optional[CertificateAuthority] = None
@@ -33,6 +45,7 @@ class AuctionPlatform:
         self._init_pki()
 
     def _init_database(self) -> None:
+        """Crea (si hace falta) el esquema SQLite para usuarios, subastas y pujas."""
         self.db_conn = sqlite3.connect(DB_FILE)
         cur = self.db_conn.cursor()
 
@@ -78,21 +91,30 @@ class AuctionPlatform:
         self.db_conn.commit()
 
     def _init_pki(self) -> None:
+        """Prepara la PKI de la app: CA raíz y una Sub-CA emisora para usuarios."""
         logger.info("=== Inicializando PKI ===")
         self.root_ca = CertificateAuthority("Root-CA", is_root=True)
         self.sub_ca = CertificateAuthority("Sub-CA-Madrid", is_root=False, parent_ca=self.root_ca)
         logger.info("[OK] PKI inicializada (Root CA + Sub-CA)")
 
     def register_user(self, username: str, password: str) -> bool:
+        """Registra un usuario nuevo con:
+
+        - Hash de contraseña mediante PBKDF2 (con salt y 100k iteraciones).
+        - Par RSA protegido con la contraseña del usuario (para firmar pujas/cierres).
+        - Certificado X.509 emitido por la Sub-CA.
+        """
         cur = self.db_conn.cursor()
         cur.execute("SELECT 1 FROM users WHERE username=?", (username,))
         if cur.fetchone():
             logger.error(f"El usuario '{username}' ya existe")
             return False
 
+        # Salt aleatorio en hex (persistimos el salt para volver a derivar)
         salt = secrets.token_hex(16)
         password_hash = derive_password_hash(password, salt)
 
+        # Par de claves del usuario para firma (RSA 2048)
         private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
         private_key_path = KEYS_DIR / f"{username}_private.pem"
         with open(private_key_path, "wb") as file:
@@ -108,6 +130,7 @@ class AuctionPlatform:
                 format=serialization.PublicFormat.SubjectPublicKeyInfo
             ))
 
+        # Emitimos el certificado del usuario con la Sub-CA (para verificar firmas)
         cert_path = self.sub_ca.issue_certificate(username, str(public_key_path))
 
         cur.execute('''
@@ -121,6 +144,7 @@ class AuctionPlatform:
         return True
 
     def authenticate_user(self, username: str, password: str) -> bool:
+        """Autentica al usuario volviendo a derivar el hash y comparándolo."""
         cur = self.db_conn.cursor()
         cur.execute("SELECT password_hash, salt FROM users WHERE username=?", (username,))
         row = cur.fetchone()
@@ -137,6 +161,11 @@ class AuctionPlatform:
         return ok
 
     def create_auction(self, title: str, description: str, start_price: float, end_date: str, encrypt: bool = True) -> int:
+        """Crea una subasta.
+
+        Si encrypt es True, cifra la descripción con AES-256-CBC y guarda la
+        clave+IV en data/.
+        """
         if not self.current_user:
             logger.error("Debe iniciar sesión para crear una subasta")
             return -1
@@ -160,6 +189,14 @@ class AuctionPlatform:
         return auction_id
 
     def place_bid(self, auction_id: int, amount: float) -> bool:
+        """Registra una puja válida y la protege con HMAC y firma digital.
+
+        Flujo resumido:
+        1) Validamos estado/monto.
+        2) Generamos HMAC-SHA256 sobre los datos de la puja (integridad rápida).
+        3) Firmamos con RSA-PSS usando la clave privada del usuario (no repudiación).
+        4) Guardamos todo en la BD y verificamos inmediatamente (doble check).
+        """
         if not self.current_user:
             logger.error("Debe iniciar sesión para pujar")
             return False
@@ -186,10 +223,12 @@ class AuctionPlatform:
             'timestamp': timestamp
         })
 
+        # HMAC: integridad con clave simétrica efímera 
         tag, hmac_file = generate_bid_hmac(bid_data, timestamp)
 
         cur.execute("SELECT private_key_path FROM users WHERE username=?", (self.current_user,))
         private_key_path = cur.fetchone()[0]
+        # Pedimos la contraseña para desencriptar la clave privada del usuario
         password = getpass.getpass("Contraseña para firmar la puja: ")
         try:
             with open(private_key_path, "rb") as file:
@@ -210,6 +249,7 @@ class AuctionPlatform:
                         (amount, self.current_user, auction_id))
             self.db_conn.commit()
 
+            # Comprobamos justo después: si algo falla, lo veremos al momento
             self._verify_bid_integrity(bid_data, tag, hmac_file)
             self._verify_bid_signature(bid_data, signature_b64, self.current_user)
             logger.info(f"[OK] Puja de {amount}€ registrada en subasta #{auction_id}")
@@ -219,6 +259,7 @@ class AuctionPlatform:
             return False
 
     def _verify_bid_integrity(self, bid_data: str, hmac_tag: str, hmac_file: Path) -> bool:
+        """Recalcula HMAC y lo compara de forma segura (compare_digest)."""
         with open(hmac_file, "rb") as file:
             key = file.read()
         computed = std_hmac.new(key, bid_data.encode(), hashlib.sha256).hexdigest()
@@ -229,6 +270,7 @@ class AuctionPlatform:
         return False
 
     def _verify_bid_signature(self, bid_data: str, signature_b64: str, username: str) -> bool:
+        """Verifica la firma RSA-PSS usando el certificado X.509 del usuario."""
         cur = self.db_conn.cursor()
         cur.execute("SELECT certificate_path FROM users WHERE username=?", (username,))
         cert_path = cur.fetchone()[0]
@@ -251,6 +293,7 @@ class AuctionPlatform:
             return False
 
     def _verify_certificate_chain(self, user_cert_path: str) -> bool:
+        """Comprueba que UserCert fue emitido por Sub-CA y esta por la Root-CA."""
         try:
             with open(user_cert_path, "rb") as file:
                 user_cert = x509.load_pem_x509_certificate(file.read())
@@ -269,6 +312,10 @@ class AuctionPlatform:
             return False
 
     def close_auction(self, auction_id: int) -> bool:
+        """Cierra una subasta (sólo el vendedor) y firma el acta de cierre.
+
+        Se genera un JSON con el resultado y se firma con la clave del vendedor.
+        """
         if not self.current_user:
             logger.error("Debe iniciar sesión")
             return False
@@ -290,6 +337,7 @@ class AuctionPlatform:
             logger.info(f"[OK] Subasta #{auction_id} cerrada sin pujas")
             return True
 
+        # Documento de cierre con metadatos mínimos
         close_doc = {
             'auction_id': auction_id,
             'title': title,
@@ -310,6 +358,7 @@ class AuctionPlatform:
                 padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.MAX_LENGTH),
                 hashes.SHA256()
             )
+            # Guardamos acta y firma por separado para poder verificarlas luego
             doc_file = DATA_DIR / f"auction_{auction_id}_close.json"
             sig_file = DATA_DIR / f"auction_{auction_id}_close.sig"
             with open(doc_file, "w") as file:
@@ -323,6 +372,7 @@ class AuctionPlatform:
             return False
 
     def list_auctions(self) -> None:
+        """Muestra por consola un listado simple de subastas ordenado por estado."""
         cur = self.db_conn.cursor()
         cur.execute('''
             SELECT id, title, seller, current_price, highest_bidder, end_date, status
