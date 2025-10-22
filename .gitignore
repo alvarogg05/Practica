@@ -1,0 +1,27 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Logs
+*.log
+
+# Database
+*.db
+
+# Cryptographic keys and certificates
+keys/
+certs/
+data/
+
+# Virtual environment
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
