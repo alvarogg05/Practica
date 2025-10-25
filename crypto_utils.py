@@ -36,7 +36,10 @@ def verify_password(password: str, salt_hex: str, expected_hash: str) -> bool:
 
 
 def encrypt_description(description: str) -> Tuple[str, Optional[bytes]]:
-    """Cifra una descripción con AES-256-CBC y devuelve (ciphertext_b64, None)."""
+    """Cifra una descripción con AES-256-CBC y devuelve (ciphertext_b64, None).
+
+    Valida inmediatamente el descifrado en memoria para demostrar el proceso.
+    """
     key = os.urandom(32)
     iv = os.urandom(16)
     cipher = Cipher(algorithms.AES(key), modes.CBC(iv))
@@ -50,8 +53,17 @@ def encrypt_description(description: str) -> Tuple[str, Optional[bytes]]:
     encrypted_desc = encryptor.update(data) + encryptor.finalize()
     description_enc = base64.b64encode(encrypted_desc).decode()
 
-    # No persistimos key/iv en disco 
-    logger.info("[OK] Descripción cifrada | AES-256-CBC (IV 128b)")
+    # Desciframos en memoria para la demostración (sin persistir clave/IV)
+    decrypt_cipher = Cipher(algorithms.AES(key), modes.CBC(iv))
+    decryptor = decrypt_cipher.decryptor()
+    padded_plain = decryptor.update(encrypted_desc) + decryptor.finalize()
+    pad_len = padded_plain[-1]
+    if not 1 <= pad_len <= 16:
+        logger.error("Padding inválido al descifrar inmediatamente la descripción")
+    else:
+        padded_plain[:-pad_len].decode()
+        logger.info("[OK] Descripción cifrada y descifrada | AES-256-CBC (IV 128b)")
+
     return description_enc, None
 
 
