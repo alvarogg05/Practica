@@ -1,22 +1,21 @@
-"""Funciones criptográficas auxiliares utilizadas en la plataforma.
+"""
+Funciones criptográficas auxiliares utilizadas en la plataforma.
 
 Se concentran aquí utilidades de hashing de contraseñas, cifrado simétrico
-y generación de HMAC para mantener el resto del código más limpio.
+y generación de HMAC.
 """
 
 import base64
-import datetime
 import hashlib
 import hmac as std_hmac
 import os
-from pathlib import Path
-from typing import Tuple
+from typing import Tuple, Optional
 
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
-from config import DATA_DIR, logger
+from config import logger
 
 
 def derive_password_hash(password: str, salt_hex: str) -> str:
@@ -36,8 +35,8 @@ def verify_password(password: str, salt_hex: str, expected_hash: str) -> bool:
     return std_hmac.compare_digest(computed, expected_hash)
 
 
-def encrypt_description(description: str) -> Tuple[str, Path]:
-    """Cifra una descripción de subasta con AES-256-CBC y devuelve datos y clave."""
+def encrypt_description(description: str) -> Tuple[str, Optional[bytes]]:
+    """Cifra una descripción con AES-256-CBC y devuelve (ciphertext_b64, None)."""
     key = os.urandom(32)
     iv = os.urandom(16)
     cipher = Cipher(algorithms.AES(key), modes.CBC(iv))
@@ -51,23 +50,17 @@ def encrypt_description(description: str) -> Tuple[str, Path]:
     encrypted_desc = encryptor.update(data) + encryptor.finalize()
     description_enc = base64.b64encode(encrypted_desc).decode()
 
-    # Guardamos key+iv juntos para poder recuperar después (sólo para la práctica)
-    key_file = DATA_DIR / f"auction_key_{datetime.datetime.now().timestamp()}.bin"
-    with open(key_file, "wb") as file:
-        file.write(key + iv)
-
+    # No persistimos key/iv en disco 
     logger.info("[OK] Descripción cifrada | AES-256-CBC (IV 128b)")
-    return description_enc, key_file
+    return description_enc, None
 
 
-def generate_bid_hmac(bid_data: str, timestamp: str) -> Tuple[str, Path]:
-    """Genera un HMAC-SHA256 para una puja y almacena la clave utilizada."""
+def generate_bid_hmac(bid_data: str) -> Tuple[str, bytes]:
+    """Genera un HMAC-SHA256 para la puja y devuelve (tag_hex, key_bytes).
+
+    La clave HMAC es efímera y no se persiste; se usa para verificación inmediata.
+    """
     hmac_key = os.urandom(32)
     tag = std_hmac.new(hmac_key, bid_data.encode(), hashlib.sha256).hexdigest()
-
-    hmac_file = DATA_DIR / f"bid_hmac_{timestamp.replace(':', '-')}.key"
-    with open(hmac_file, "wb") as file:
-        file.write(hmac_key)
-
     logger.info("[OK] HMAC-SHA256 generado (key 256b)")
-    return tag, hmac_file
+    return tag, hmac_key

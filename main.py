@@ -1,7 +1,4 @@
-"""Punto de entrada de la plataforma de subastas electrónica.
-Proporciona un menú de texto sencillo para interactuar con la clase
-AuctionPlatform. Mantiene la lógica de UI separada de la lógica de negocio.
-"""
+"""Punto de entrada de la plataforma de subastas electrónica."""
 
 import datetime
 import getpass
@@ -11,11 +8,8 @@ from config import logger
 
 
 def main_menu() -> None:
-    """Bucle principal del menú por consola.
-
-    No valida exhaustivamente entradas (por sencillez), pero maneja casos
-    comunes como números inválidos al introducir ID o importes.
-    """
+    """Bucle principal del menú por consola."""
+    
     platform = AuctionPlatform()
     while True:
         print("\n" + "=" * 50)

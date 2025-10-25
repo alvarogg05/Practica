@@ -1,62 +1,42 @@
-"""Lógica principal de la plataforma de subastas electrónicas.
+"""
+Lógica principal de la plataforma de subastas electrónicas.
 
 Este módulo concentra la capa de aplicación: alta/login de usuarios, creación de
-subastas, pujas y cierre. Se apoya en:
-- config para constantes y logging.
-- crypto_utils para operaciones criptográficas de uso común.
-- pki para la emisión/validación de certificados X.509.
+subastas, pujas y cierre. Se apoya en config para constantes y logging y en
+crypto_utils para operaciones criptográficas reutilizables.
 """
 
-import base64
 import datetime
-import getpass
 import json
 import secrets
 import sqlite3
-from pathlib import Path
 from typing import Optional
 
 import hashlib
 import hmac as std_hmac
 
-from cryptography import x509
-from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import padding, rsa
-
-from config import DB_FILE, DATA_DIR, KEYS_DIR, logger
+from config import DB_FILE, DATA_DIR, SAVE_ACTA_JSON, logger
 from crypto_utils import derive_password_hash, encrypt_description, generate_bid_hmac, verify_password
-from pki import CertificateAuthority
 
 
 class AuctionPlatform:
-    """Plataforma principal de subastas electrónicas.
-
-    Encapsula el estado (usuario autenticado, conexión SQLite y PKI) y ofrece
-    métodos de alto nivel para operar con la plataforma.
-    """
+    """Plataforma principal de subastas electrónicas."""
 
     def __init__(self):
-        """Inicializa recursos base: BD y jerarquía de certificación (PKI)."""
-        self.db_conn = None
+        """Inicializa recursos base: BD y estructuras internas."""
+        self.db_conn = sqlite3.connect(DB_FILE)
         self.current_user: Optional[str] = None
-        self.root_ca: Optional[CertificateAuthority] = None
-        self.sub_ca: Optional[CertificateAuthority] = None
         self._init_database()
-        self._init_pki()
 
     def _init_database(self) -> None:
         """Crea (si hace falta) el esquema SQLite para usuarios, subastas y pujas."""
-        self.db_conn = sqlite3.connect(DB_FILE)
         cur = self.db_conn.cursor()
 
         cur.execute('''
             CREATE TABLE IF NOT EXISTS users (
                 username TEXT PRIMARY KEY,
                 password_hash TEXT NOT NULL,
-                salt TEXT NOT NULL,
-                public_key_path TEXT,
-                private_key_path TEXT,
-                certificate_path TEXT
+                salt TEXT NOT NULL
             )
         ''')
         cur.execute('''
@@ -83,63 +63,30 @@ class AuctionPlatform:
                 timestamp TEXT NOT NULL,
                 bid_data TEXT,
                 hmac_tag TEXT,
-                signature TEXT,
                 FOREIGN KEY (auction_id) REFERENCES auctions(id),
                 FOREIGN KEY (bidder) REFERENCES users(username)
             )
         ''')
         self.db_conn.commit()
 
-    def _init_pki(self) -> None:
-        """Prepara la PKI de la app: CA raíz y una Sub-CA emisora para usuarios."""
-        logger.info("=== Inicializando PKI ===")
-        self.root_ca = CertificateAuthority("Root-CA", is_root=True)
-        self.sub_ca = CertificateAuthority("Sub-CA-Madrid", is_root=False, parent_ca=self.root_ca)
-        logger.info("[OK] PKI inicializada (Root CA + Sub-CA)")
-
     def register_user(self, username: str, password: str) -> bool:
-        """Registra un usuario nuevo con:
-
-        - Hash de contraseña mediante PBKDF2 (con salt y 100k iteraciones).
-        - Par RSA protegido con la contraseña del usuario (para firmar pujas/cierres).
-        - Certificado X.509 emitido por la Sub-CA.
-        """
+        """Registra un usuario aplicando PBKDF2-HMAC-SHA256 a la contraseña."""
         cur = self.db_conn.cursor()
         cur.execute("SELECT 1 FROM users WHERE username=?", (username,))
         if cur.fetchone():
             logger.error(f"El usuario '{username}' ya existe")
             return False
 
-        # Salt aleatorio en hex (persistimos el salt para volver a derivar)
         salt = secrets.token_hex(16)
         password_hash = derive_password_hash(password, salt)
 
-        # Par de claves del usuario para firma (RSA 2048)
-        private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-        private_key_path = KEYS_DIR / f"{username}_private.pem"
-        with open(private_key_path, "wb") as file:
-            file.write(private_key.private_bytes(
-                encoding=serialization.Encoding.PEM,
-                format=serialization.PrivateFormat.TraditionalOpenSSL,
-                encryption_algorithm=serialization.BestAvailableEncryption(password.encode())
-            ))
-        public_key_path = KEYS_DIR / f"{username}_public.pem"
-        with open(public_key_path, "wb") as file:
-            file.write(private_key.public_key().public_bytes(
-                encoding=serialization.Encoding.PEM,
-                format=serialization.PublicFormat.SubjectPublicKeyInfo
-            ))
-
-        # Emitimos el certificado del usuario con la Sub-CA (para verificar firmas)
-        cert_path = self.sub_ca.issue_certificate(username, str(public_key_path))
-
         cur.execute('''
-            INSERT INTO users (username, password_hash, salt, public_key_path, private_key_path, certificate_path)
-            VALUES (?, ?, ?, ?, ?, ?)
-        ''', (username, password_hash, salt, str(public_key_path), str(private_key_path), cert_path))
+            INSERT INTO users (username, password_hash, salt)
+            VALUES (?, ?, ?)
+        ''', (username, password_hash, salt))
         self.db_conn.commit()
         logger.info(
-            f"[OK] Usuario '{username}' registrado | PBKDF2-HMAC-SHA256 (100k iters) | RSA-2048 | Cert emitido"
+            f"[OK] Usuario '{username}' registrado | PBKDF2-HMAC-SHA256 (100k iters)"
         )
         return True
 
@@ -161,11 +108,7 @@ class AuctionPlatform:
         return ok
 
     def create_auction(self, title: str, description: str, start_price: float, end_date: str, encrypt: bool = True) -> int:
-        """Crea una subasta.
-
-        Si encrypt es True, cifra la descripción con AES-256-CBC y guarda la
-        clave+IV en data/.
-        """
+        """Crea una subasta; opcionalmente cifra la descripción (AES-256-CBC)."""
         if not self.current_user:
             logger.error("Debe iniciar sesión para crear una subasta")
             return -1
@@ -185,31 +128,28 @@ class AuctionPlatform:
               None, end_date, 'active', enc_flag))
         self.db_conn.commit()
         auction_id = cur.lastrowid
+        assert auction_id is not None
         logger.info(f"[OK] Subasta #{auction_id} creada por '{self.current_user}'")
         return auction_id
 
     def place_bid(self, auction_id: int, amount: float) -> bool:
-        """Registra una puja válida y la protege con HMAC y firma digital.
-
-        Flujo resumido:
-        1) Validamos estado/monto.
-        2) Generamos HMAC-SHA256 sobre los datos de la puja (integridad rápida).
-        3) Firmamos con RSA-PSS usando la clave privada del usuario (no repudiación).
-        4) Guardamos todo en la BD y verificamos inmediatamente (doble check).
-        """
+        """Registra una puja válida y la protege con HMAC-SHA256."""
         if not self.current_user:
             logger.error("Debe iniciar sesión para pujar")
             return False
 
         cur = self.db_conn.cursor()
-        cur.execute("SELECT current_price, status FROM auctions WHERE id=?", (auction_id,))
+        cur.execute("SELECT current_price, status, seller FROM auctions WHERE id=?", (auction_id,))
         row = cur.fetchone()
         if not row:
             logger.error(f"Subasta #{auction_id} no encontrada")
             return False
-        current_price, status = row
+        current_price, status, seller = row
         if status != 'active':
             logger.error("La subasta no está activa")
+            return False
+        if seller == self.current_user:
+            logger.error("El vendedor no puede pujar en su propia subasta")
             return False
         if amount <= current_price:
             logger.error(f"La puja debe ser mayor a {current_price}")
@@ -222,99 +162,35 @@ class AuctionPlatform:
             'amount': amount,
             'timestamp': timestamp
         })
+        # HMAC: integridad con clave simétrica efímera (no persistimos la clave)
+        tag, hmac_key = generate_bid_hmac(bid_data)
 
-        # HMAC: integridad con clave simétrica efímera 
-        tag, hmac_file = generate_bid_hmac(bid_data, timestamp)
+        cur.execute('''
+            INSERT INTO bids (auction_id, bidder, amount, timestamp, bid_data, hmac_tag)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (auction_id, self.current_user, amount, timestamp, bid_data, tag))
+        cur.execute('UPDATE auctions SET current_price=?, highest_bidder=? WHERE id=?',
+                    (amount, self.current_user, auction_id))
+        self.db_conn.commit()
 
-        cur.execute("SELECT private_key_path FROM users WHERE username=?", (self.current_user,))
-        private_key_path = cur.fetchone()[0]
-        # Pedimos la contraseña para desencriptar la clave privada del usuario
-        password = getpass.getpass("Contraseña para firmar la puja: ")
-        try:
-            with open(private_key_path, "rb") as file:
-                private_key = serialization.load_pem_private_key(file.read(), password=password.encode())
-            signature = private_key.sign(
-                bid_data.encode(),
-                padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.MAX_LENGTH),
-                hashes.SHA256()
-            )
-            signature_b64 = base64.b64encode(signature).decode()
-            logger.info("[OK] Firma RSA-PSS generada | RSA-2048 | SHA-256")
+        # Verificamos inmediatamente usando la clave efímera en memoria
+        self._verify_bid_integrity(bid_data, tag, hmac_key)
+        logger.info(f"[OK] Puja de {amount}€ registrada en subasta #{auction_id}")
+        return True
 
-            cur.execute('''
-                INSERT INTO bids (auction_id, bidder, amount, timestamp, bid_data, hmac_tag, signature)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            ''', (auction_id, self.current_user, amount, timestamp, bid_data, tag, signature_b64))
-            cur.execute('UPDATE auctions SET current_price=?, highest_bidder=? WHERE id=?',
-                        (amount, self.current_user, auction_id))
-            self.db_conn.commit()
-
-            # Comprobamos justo después: si algo falla, lo veremos al momento
-            self._verify_bid_integrity(bid_data, tag, hmac_file)
-            self._verify_bid_signature(bid_data, signature_b64, self.current_user)
-            logger.info(f"[OK] Puja de {amount}€ registrada en subasta #{auction_id}")
-            return True
-        except Exception as error:
-            logger.error(f"Error al firmar la puja: {error}")
-            return False
-
-    def _verify_bid_integrity(self, bid_data: str, hmac_tag: str, hmac_file: Path) -> bool:
+    def _verify_bid_integrity(self, bid_data: str, hmac_tag: str, hmac_key: bytes) -> bool:
         """Recalcula HMAC y lo compara de forma segura (compare_digest)."""
-        with open(hmac_file, "rb") as file:
-            key = file.read()
-        computed = std_hmac.new(key, bid_data.encode(), hashlib.sha256).hexdigest()
+        computed = std_hmac.new(hmac_key, bid_data.encode(), hashlib.sha256).hexdigest()
         if std_hmac.compare_digest(computed, hmac_tag):
             logger.info("[OK] HMAC verificado OK")
             return True
         logger.error("[ERR] HMAC inválido")
         return False
 
-    def _verify_bid_signature(self, bid_data: str, signature_b64: str, username: str) -> bool:
-        """Verifica la firma RSA-PSS usando el certificado X.509 del usuario."""
-        cur = self.db_conn.cursor()
-        cur.execute("SELECT certificate_path FROM users WHERE username=?", (username,))
-        cert_path = cur.fetchone()[0]
-        with open(cert_path, "rb") as file:
-            cert = x509.load_pem_x509_certificate(file.read())
-        public_key = cert.public_key()
-        signature = base64.b64decode(signature_b64)
-        try:
-            public_key.verify(
-                signature,
-                bid_data.encode(),
-                padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.MAX_LENGTH),
-                hashes.SHA256()
-            )
-            logger.info(f"[OK] Firma verificada para '{username}'")
-            self._verify_certificate_chain(cert_path)
-            return True
-        except Exception as error:
-            logger.error(f"[ERR] Firma inválida: {error}")
-            return False
-
-    def _verify_certificate_chain(self, user_cert_path: str) -> bool:
-        """Comprueba que UserCert fue emitido por Sub-CA y esta por la Root-CA."""
-        try:
-            with open(user_cert_path, "rb") as file:
-                user_cert = x509.load_pem_x509_certificate(file.read())
-            with open(self.sub_ca.cert_path, "rb") as file:
-                sub_cert = x509.load_pem_x509_certificate(file.read())
-            with open(self.root_ca.cert_path, "rb") as file:
-                root_cert = x509.load_pem_x509_certificate(file.read())
-
-            if user_cert.issuer == sub_cert.subject and sub_cert.issuer == root_cert.subject:
-                logger.info("[OK] Cadena de certificación: User <- SubCA <- Root")
-                return True
-            logger.error("[ERR] Cadena de certificación inválida")
-            return False
-        except Exception as error:
-            logger.error(f"[ERR] Error cadena PKI: {error}")
-            return False
-
     def close_auction(self, auction_id: int) -> bool:
-        """Cierra una subasta (sólo el vendedor) y firma el acta de cierre.
-
-        Se genera un JSON con el resultado y se firma con la clave del vendedor.
+        """
+        Cierra una subasta y registra el resultado. 
+        Según configuración (SAVE_ACTA_JSON), puede generarse un acta JSON en disco.
         """
         if not self.current_user:
             logger.error("Debe iniciar sesión")
@@ -346,30 +222,14 @@ class AuctionPlatform:
             'final_price': final_price,
             'close_date': datetime.datetime.now().isoformat()
         }
-        doc_json = json.dumps(close_doc, indent=2)
-        cur.execute("SELECT private_key_path FROM users WHERE username=?", (self.current_user,))
-        private_key_path = cur.fetchone()[0]
-        password = getpass.getpass("Contraseña para firmar cierre: ")
-        try:
-            with open(private_key_path, "rb") as file:
-                private_key = serialization.load_pem_private_key(file.read(), password=password.encode())
-            signature = private_key.sign(
-                doc_json.encode(),
-                padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.MAX_LENGTH),
-                hashes.SHA256()
-            )
-            # Guardamos acta y firma por separado para poder verificarlas luego
+        if SAVE_ACTA_JSON:
             doc_file = DATA_DIR / f"auction_{auction_id}_close.json"
-            sig_file = DATA_DIR / f"auction_{auction_id}_close.sig"
-            with open(doc_file, "w") as file:
-                file.write(doc_json)
-            with open(sig_file, "wb") as file:
-                file.write(signature)
-            logger.info(f"[OK] Subasta #{auction_id} cerrada | Ganador: {winner} | Doc firmado")
-            return True
-        except Exception as error:
-            logger.error(f"Error al firmar cierre: {error}")
-            return False
+            with open(doc_file, "w", encoding="utf-8") as file:
+                json.dump(close_doc, file, indent=2)
+            logger.info(f"[OK] Subasta #{auction_id} cerrada | Ganador: {winner} | Acta almacenada")
+        else:
+            logger.info(f"[OK] Subasta #{auction_id} cerrada | Ganador: {winner}")
+        return True
 
     def list_auctions(self) -> None:
         """Muestra por consola un listado simple de subastas ordenado por estado."""

@@ -1,4 +1,5 @@
-"""Configuración y constantes compartidas para la plataforma de subastas.
+"""
+Configuración y constantes compartidas para la plataforma de subastas.
 
 Este módulo centraliza paths, creación de carpetas y la configuración del
 logger para que el resto de módulos sólo importen y usen.
@@ -9,13 +10,13 @@ from pathlib import Path
 
 # Constantes de configuración (ficheros y carpetas base del proyecto)
 DB_FILE = "auction_platform.db"
-KEYS_DIR = Path("keys")
-CERTS_DIR = Path("certs")
 DATA_DIR = Path("data")
 
+# Flag de persistencia 
+SAVE_ACTA_JSON = True  # Si True, guarda actas de cierre en data/
+
 # Creamos directorios al importar el módulo para evitar comprobaciones repetidas
-for directory in (KEYS_DIR, CERTS_DIR, DATA_DIR):
-    directory.mkdir(exist_ok=True)
+DATA_DIR.mkdir(exist_ok=True)
 
 # Configuración de logging común: fichero + consola con formato simple
 logging.basicConfig(
