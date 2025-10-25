@@ -1,0 +1,171 @@
+Desarrollo de una aplicación que utilice criptografía
+Objetivo
+El objetivo de esta práctica es que los alumnos conozcan y aprendan a utilizar librerías
+criptográficas para así afianzar los conceptos criptográficos estudiados en teoría. Así, se
+proporciona un enunciado para crear un programa/aplicación, cuya funcionalidad ha de ser
+escogida por los alumnos, pero que debe realizar una serie de operaciones criptográficas.
+Descripción
+El programa que se debe implementar en esta práctica debe realizarse en Python o Java y ha de
+implementar de forma obligatoria las siguientes funciones criptográficas:
+1. Registro y autenticación de usuarios
+2. Cifrado/descifrado simétrico y/o asimétrico (o con cifrado autenticado)
+3. Generación/verificación de etiquetas de autenticación de mensajes (e.g., con funciones
+hash y HMAC) (o con cifrado autenticado)
+4. Generación/verificación de firma digital
+5. Autenticación de las claves públicas mediante certificados (despliegue de PKI)
+En todo momento es necesario utilizar algoritmos que se utilicen en la actualidad y que no
+hayan sido comprometidos. Así, por ejemplo, DES no se debe utilizar, debiéndose utilizar AES
+en su lugar.
+1. Registro y autenticación de usuarios
+Cada grupo puede escoger el método de autenticación de usuarios que considere más
+adecuado en cada caso:
+● Basado en algo que sabemos: contraseñas; se deben almacenar convenientemente y a
+ser posible que sean robustas. Esta será la opción que se requerirá que se implemente
+en todos los casos como mínimo.
+● Basado en algo que tenemos: token, pudiendo ser un mensaje al móvil, un tipo de
+tarjeta, etc. Hay múltiples alternativas.
+● Basado en algo que somos: rasgo biométrico, desde la huella dactilar, hasta la imagen
+facial o el iris, entre otros.
+2. Cifrado y descifrado simétrico y/o asimétrico
+En algún momento, en el sistema a desarrollar se tiene que producir un cifrado y descifrado de
+información, pudiéndose ver el resultado de dichas operaciones. Nótese que, si el cifrado (o
+cualquiera de las operaciones criptográficas siguientes) se aplica, por ejemplo, en
+comunicaciones o es transparente para el usuario, se ha de mostrar el resultado en un log o en
+un mensaje de depuración, junto con el tipo de algoritmo y la longitud de clave utilizada.
+En lo referente a la generación de claves hay que considerar lo siguiente:
+1
+Práctica Criptografía y Seguridad Informática
+● Las claves han de tener una longitud apropiada y en relación con el algoritmo que se
+esté utilizando.
+3. Generación/verificación de etiquetas de autenticación de mensajes
+La información de valor que se intercambie o almacene además de cifrada debe estar
+autenticada. Los algoritmos de códigos (o etiquetas) de autenticación de mensajes
+proporcionan este servicio.
+Es recomendable mostrar el resultado en un log o en un mensaje de depuración, junto con el
+tipo de algoritmo y la longitud de clave utilizada.
+4. Generación/verificación de firma digital
+Se generarán y verificarán firmas digitales emitidas sobre algún tipo de información. En el caso
+mínimo será el propio sistema el que genere las firmas, pero dependiendo de las necesidades
+del sistema podría ser adecuado que las generasen los propios usuarios. La verificación como
+mínimo se realizará de forma automática (reflejando el resultado en un log o mensaje de
+depuración) o permitiendo a los usuarios solicitar dicha verificación.
+En lo referente a la generación de claves hay que considerar lo siguiente:
+● Las claves asimétricas han de tener una longitud apropiada y en relación con el
+algoritmo que se esté utilizando.
+Es recomendable mostrar el resultado en un log o en un mensaje de depuración, junto con el
+tipo de algoritmo y la longitud de clave utilizada.
+5. Autenticación de las claves públicas mediante certificados (despliegue de PKI)
+Cada grupo se convierte en una AUTORIDAD DE CERTIFICACIÓN RAÍZ (como puede ser en el
+mundo real, la Fábrica Nacional de Moneda y Timbre). Dicha Autoridad (AC1) contará con un
+certificado autofirmado.
+Por cuestiones organizativas (por ejemplo, para tener una delegación en cada comunidad
+autónoma) podría ser conveniente contar con varias AUTORIDADES DE CERTIFICACIÓN
+SUBORDINADAS (AC2,…, ACn), las cuales se dedicarían a emitir certificados de clave pública a
+las personas (A, B, C), como se muestra en la siguiente imagen.
+Así, las infraestructuras de clave pública (PKIs) desplegadas estarán compuestas como mínimo
+por una AC raíz (AC1) y, de forma altamente recomendable, por una AC subordinada (AC2).
+Nótese que se puede crear esa PKI u otra de más niveles o con mayor número de autoridades
+subordinadas.
+2
+Práctica Criptografía y Seguridad Informática
+Se expedirán certificados de clave pública para todos los usuarios (personas) que quieran o
+necesiten hacer uso de las claves privadas (es decir, al menos para las entidades generadoras
+de firmas digitales, y en caso de que se haya incluido cifrado asimétrico, para aquellas
+entidades que lo utilicen).
+Es recomendable mostrar el resultado de estas operaciones en un log o en un mensaje de
+depuración, junto con el tipo de algoritmo y la longitud de clave utilizada.
+6. Generación y almacenamiento de claves
+Las claves son elementos que han de estar protegidos frente a posibles ataques, aunque hay
+que considerar las diferencias entre cifrado simétrico, asimétrico, firma digital y HMAC:
+● Simétrico: dado que la clave de cifrado es la misma que la de descifrado, ésta podría
+estar:
+o Almacenada en un fichero/base de datos. Dado que esta clave es secreta,
+podría ocurrir que se almacenase con algún tipo de protección (por ejemplo,
+cifrada con una contraseña introducida por el usuario).
+o También es posible no almacenar la clave:
+▪ Si el usuario la memoriza el usuario y la proporciona en los momentos
+necesarios.
+▪ Si ésta se genera a partir de la contraseña del usuario.
+● Etiquetas de autenticación de mensajes: en la generación de MACs se utiliza una única
+clave, de modo que las consideraciones son las establecidas para el cifrado simétrico.
+● Cifrado asimétrico/firma digital: las claves de cifrado y descifrado (generación y
+verificación en el caso de la firma) son distintas y lo más habitual es que, dada su
+longitud, no sean introducidas por los usuarios, sino que se creen y posteriormente, el
+usuario podría utilizarlas porque estén almacenadas en un fichero/base de datos y se
+seleccione la pública o la privada, según corresponda. Es altamente recomendable que
+3
+Práctica Criptografía y Seguridad Informática
+el acceso a la clave privada esté protegido y que ésta sólo sea accesible facilitando una
+contraseña. Para autenticar las claves públicas se hará uso de una PKI como la
+anteriormente descrita.
+Hay que remarcar la importancia de que las claves tengan la longitud y entropía apropiada, así
+como que se almacenen adecuadamente.
+Calidad del software
+Todos los códigos entregados tienen que tener unos estándares mínimos de calidad, lo que
+supone la inclusión de comentarios y las pruebas de errores en las entradas de usuario.
+Evaluación
+La siguiente tabla resume la calificación que es posible obtener en esta práctica.
+Criterio Puntuación máxima Evaluación
+Desarrollo:
+Autenticación de usuarios 0,75 Eval. 1
+Cifrado simétrico/asimétrico 0,5 Eval. 1
+Autenticación de mensajes 0,25 Eval. 1
+Calidad del software 0,25+0,25 Eval. 1/Eval 2
+Gestión de claves 0.5 Eval. 2
+Firma digital 1 Eval. 2
+Certificados y PKI 1 Eval. 2
+Total desarrollo 4,5
+Documentación y defensa:
+Memorias 1,25 + 1,5 Eval. 1/Eval. 2
+Defensas 1,25 + 1,5 Eval. 1/Eval. 2
+Total documentación y defensa 5,5
+Total práctica 10
+4
+Práctica Criptografía y Seguridad Informática
+Entregables
+Se realizarán 2 entregables, uno de ellos asociado a los aspectos etiquetados como Eval. 1 en la
+tabla y otro asociado a los aspectos etiquetados como Eval. 2 en la tabla.
+Cada uno de los entregables deberá responder a las preguntas aquí planteadas y no excederse
+de la longitud indicada. Además, se debe presentar el código asociado, el cual debe estar
+debidamente documentado y utilizando buenas prácticas de programación y diseño de
+software. Si no se siguen estos criterios habrá una penalización en la puntuación.
+Entregable 1
+Grupo:
+ID de grupo de prácticas:
+Nombre de todos los alumnos:
+Correo de todos los alumnos:
+Repositorio de código (enlace) si lo hubiera:
+Responda a las siguientes preguntas. Incluya capturas de pantalla que soporten sus
+argumentos.
+● ¿Cuál es el propósito de su aplicación? ¿Cuál es su estructura interna?
+● ¿Cómo se realiza la autenticación de usuarios? ¿Qué algoritmos ha utilizado y por qué?
+Detalle cómo se gestionan las contraseñas de los usuarios y si se generan claves a
+partir de éstas.
+● ¿Para qué utiliza el cifrado simétrico/ asimétrico o ambos? ¿Qué algoritmos ha
+utilizado y por qué? ¿Cómo gestiona las claves? Explique los mismos aspectos si se
+utiliza cifrado asimétrico para este tipo de cifrado.
+● ¿Para qué utiliza las funciones de códigos de autenticación de mensajes (MAC)? ¿Qué
+algoritmos ha utilizado y por qué? ¿Cómo gestiona la clave/s? Explicite si utiliza
+algoritmos de cifrado autenticado y las ventajas que esto ofrece.
+● Indique las pruebas realizadas para garantizar la calidad del código
+El límite de páginas es de 5, excluyendo la portada y los anexos. El tamaño de letra debe ser 11,
+con interlineado simple, de tipo Calibri/ Arial o Times New Roman.
+5
+Práctica Criptografía y Seguridad Informática
+Entregable 2
+Grupo:
+ID de grupo de prácticas:
+Nombre de todos los alumnos:
+Correo de todos los alumnos:
+Repositorio de código (enlace) si lo hubiera:
+Responda a las siguientes preguntas. Incluya capturas de pantalla que soporten sus
+argumentos.
+● ¿Cuál es el propósito de su aplicación? (repetir lo indicado en informe 1)
+● ¿Para qué utiliza la firma digital? ¿Qué algoritmos ha utilizado y por qué? ¿Cómo se
+gestionan y almacenan las claves y las firmas?
+● ¿Cómo se generan los certificados de clave pública? ¿Qué jerarquía de autoridades de
+certificación se ha desplegado? ¿Por qué ha escogido esta configuración y no otra?
+¿Cómo se ha implementado? ¿En qué momento se utilizan los certificados y para qué?
+● Indique las pruebas realizadas para garantizar la calidad del código
+El límite de páginas es de 10, excluyendo la portada y los anexos. El tamaño de letra debe ser
+11, con interlineado simple, de tipo Calibri/ Arial o Times New Roman.
